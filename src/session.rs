@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use p256::SecretKey;
+use std::path::PathBuf;
 use std::time::Duration;
 use zeroize::Zeroize;
 
@@ -9,6 +10,7 @@ use crate::eid;
 use crate::error::TransactionError;
 use crate::handshake::HandshakeInitiator;
 use crate::kdf::{Purpose, derive};
+use crate::links;
 use crate::phone::{CableLink, CableTransport, MSG_CTAP, MSG_SHUTDOWN, MSG_UPDATE};
 use crate::tunnel::{self, decode_tunnel_server_domain};
 
@@ -21,6 +23,10 @@ const POST_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Upper bound for the phone's answer to one CTAP command; the user may still
 /// be confirming on the phone. Firefox gives the whole operation 5 minutes.
 const CTAP_REPLY_TIMEOUT: Duration = Duration::from_secs(300);
+/// After the CTAP reply, keep the tunnel open this long for linking
+/// information in update messages; Chromium waits the same 3 minutes.  The
+/// phone normally sends it within seconds and then closes the tunnel.
+const LINKING_UPDATE_WINDOW: Duration = Duration::from_secs(180);
 
 /// Which data transfer channel the authenticator chose.
 pub enum Channel {
@@ -50,6 +56,40 @@ pub struct DesktopFlow {
     /// Budget for establishing the BLE L2CAP channel before falling back to
     /// the WebSocket channel; a field so that tests can shrink it.
     pub connect_timeout: Duration,
+    /// Where to store linking information the phone sends (the daemon's
+    /// state directory); `None` ignores it.
+    pub link_store: Option<PathBuf>,
+}
+
+/// What is needed to verify and store linking information from one QR
+/// transaction.
+#[derive(Clone)]
+struct LinkingContext {
+    dir: PathBuf,
+    domain: u16,
+    identity: SecretKey,
+    handshake_hash: [u8; 32],
+}
+
+impl LinkingContext {
+    /// Verify and store the linking map found under `key` in `message`, if
+    /// any.  Bad linking information is logged and dropped; it never fails
+    /// the transaction.
+    fn capture(&self, message: &[u8], key: u64) {
+        let Some(map) = links::find_linking_map(message, key) else {
+            return;
+        };
+        match links::parse_linking(map, self.domain, &self.identity, &self.handshake_hash) {
+            Ok(link) => {
+                let name = link.name.clone();
+                match links::add(&self.dir, link) {
+                    Ok(()) => tracing::info!(phone = %name, "linked phone stored"),
+                    Err(e) => tracing::warn!("cannot store the linked phone: {e:#}"),
+                }
+            }
+            Err(e) => tracing::warn!("ignoring linking information: {e:#}"),
+        }
+    }
 }
 
 /// Result of a completed desktop-side caBLE session.
@@ -111,6 +151,16 @@ impl DesktopFlow {
             "received post-handshake message"
         );
 
+        let linking = self.link_store.clone().map(|dir| LinkingContext {
+            dir,
+            domain: components.tunnel_server_domain,
+            identity: self.identity.clone(),
+            handshake_hash,
+        });
+        if let Some(linking) = &linking {
+            linking.capture(&post_handshake, links::POST_HANDSHAKE_KEY_LINKING);
+        }
+
         link.send_ctap(ctap_command)
             .await
             .map_err(TransactionError::transport)?;
@@ -128,6 +178,9 @@ impl DesktopFlow {
                 MSG_CTAP => break payload,
                 MSG_UPDATE => {
                     tracing::info!(len = payload.len(), "received update message");
+                    if let Some(linking) = &linking {
+                        linking.capture(&payload, links::UPDATE_KEY_LINKING);
+                    }
                 }
                 MSG_SHUTDOWN => {
                     return Err(TransactionError::failed(anyhow::anyhow!(
@@ -143,6 +196,12 @@ impl DesktopFlow {
         };
 
         link.send_shutdown().await.ok();
+
+        // The phone may send linking information after the reply.  Hand the
+        // reply back now and listen for it in the background.
+        if let Some(linking) = linking {
+            tokio::spawn(drain_updates(link, linking));
+        }
 
         Ok(DesktopResult {
             post_handshake,
@@ -250,6 +309,24 @@ impl DesktopFlow {
             .await
             .map_err(TransactionError::transport)?;
         Ok(CableTransport::Websocket(Box::new(ws)))
+    }
+}
+
+/// Read update messages until the phone closes the tunnel or the window
+/// ends, storing any linking information they carry.
+async fn drain_updates(mut link: CableLink, linking: LinkingContext) {
+    let deadline = tokio::time::Instant::now() + LINKING_UPDATE_WINDOW;
+    loop {
+        match tokio::time::timeout_at(deadline, link.recv_message()).await {
+            Ok(Ok((MSG_UPDATE, payload))) => {
+                tracing::info!(len = payload.len(), "received update message after the reply");
+                linking.capture(&payload, links::UPDATE_KEY_LINKING);
+            }
+            Ok(Ok((other, _))) => {
+                tracing::debug!(message_type = other, "ignoring a message after the reply");
+            }
+            Ok(Err(_)) | Err(_) => break,
+        }
     }
 }
 

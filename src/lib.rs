@@ -11,6 +11,7 @@ pub mod error;
 pub mod handshake;
 pub mod identity;
 pub mod kdf;
+pub mod links;
 pub mod noise;
 pub mod notify;
 pub mod phone;

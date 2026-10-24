@@ -164,6 +164,7 @@ async fn l2cap_connect_failure_falls_back_to_websocket() -> Result<()> {
         plaintext_eid,
         handshake_timeout: ucabled::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: std::time::Duration::from_millis(500),
+        link_store: None,
     };
 
     let start = std::time::Instant::now();
@@ -206,6 +207,7 @@ async fn desktop_flow_over_l2cap() -> Result<()> {
         plaintext_eid: PLAINTEXT_EID,
         handshake_timeout: ucabled::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: ucabled::tunnel::DIAL_TIMEOUT,
+        link_store: None,
     };
     let result = flow.run(&[0x04]).await?;
 

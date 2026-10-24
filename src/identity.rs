@@ -73,7 +73,7 @@ pub fn load_or_create(dir: &Path) -> Result<SecretKey> {
 /// cannot wedge every later start with `AlreadyExists`; `create_new` keeps the
 /// `O_EXCL` guarantee against a squatting file or symlink.
 #[cfg(unix)]
-fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     use std::io::Write;
     use std::os::unix::fs::OpenOptionsExt;
 
@@ -131,7 +131,7 @@ fn warn_if_group_or_world_readable(path: &Path) {
 fn warn_if_group_or_world_readable(_path: &Path) {}
 
 #[cfg(not(unix))]
-fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
+pub(crate) fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     fs::write(path, bytes)
 }
 

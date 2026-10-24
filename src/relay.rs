@@ -57,8 +57,9 @@ pub async fn run_qr_transaction(
     let mut qr_secret = [0u8; 16];
     OsRng.fill_bytes(&mut qr_secret);
 
-    // Linking is shelved (iOS does not implement it, see docs/linking.md), so
-    // do not advertise it.
+    // Offer linking: Android phones then send linking information, which
+    // lets later transactions reach the phone without a QR code (see
+    // docs/linking.md).  iPhones ignore the flag.
     let offer_ble = ble_channel_enabled();
     let mut channels = vec![qr::TRANSPORT_WEBSOCKET];
     if offer_ble {
@@ -68,7 +69,7 @@ pub async fn run_qr_transaction(
         compressed,
         &qr_secret,
         NUM_ASSIGNED_TUNNEL_DOMAINS,
-        false,
+        true,
         request_type,
         &channels,
     );
@@ -99,6 +100,7 @@ pub async fn run_qr_transaction(
         plaintext_eid: advert.plaintext_eid,
         handshake_timeout: crate::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: crate::tunnel::DIAL_TIMEOUT,
+        link_store: Some(crate::identity::state_dir()),
     };
     let result = flow.run(ctap_command).await?;
     Ok(result.ctap_reply)

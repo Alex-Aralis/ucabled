@@ -118,6 +118,7 @@ async fn main() -> Result<()> {
         plaintext_eid,
         handshake_timeout: ucabled::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: ucabled::tunnel::DIAL_TIMEOUT,
+        link_store: None,
     };
     let result = flow.run(&cmd).await?;
 

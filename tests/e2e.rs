@@ -75,6 +75,7 @@ async fn full_roundtrip_over_local_relay() -> Result<()> {
         plaintext_eid,
         handshake_timeout: ucabled::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: ucabled::tunnel::DIAL_TIMEOUT,
+        link_store: None,
     };
     let result = flow.run(&[0x04]).await?;
 
@@ -142,6 +143,7 @@ async fn a_stalled_handshake_times_out() -> Result<()> {
         plaintext_eid,
         handshake_timeout: std::time::Duration::from_millis(500),
         connect_timeout: ucabled::tunnel::DIAL_TIMEOUT,
+        link_store: None,
     };
 
     let start = std::time::Instant::now();
@@ -253,6 +255,7 @@ async fn reply_is_not_delayed_by_a_lingering_phone() -> Result<()> {
         plaintext_eid,
         handshake_timeout: ucabled::session::HANDSHAKE_RESPONSE_TIMEOUT,
         connect_timeout: ucabled::tunnel::DIAL_TIMEOUT,
+        link_store: None,
     };
 
     let start = std::time::Instant::now();
