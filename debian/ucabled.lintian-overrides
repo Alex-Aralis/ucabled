@@ -1,5 +1,0 @@
-# Session agents own unique bus names only, so the D-Bus policy matches
-# them by interface (org.ucabled.Agent1) instead of by destination name;
-# see the comment in dist/org.ucabled.conf.  Overridden without a context
-# because the rule's line number is not stable across upstream edits.
-dbus-policy-without-send-destination

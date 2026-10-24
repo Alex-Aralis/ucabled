@@ -1,4 +1,0 @@
-target/release/ucabled usr/bin
-dist/90-ucabled.rules usr/lib/udev/rules.d
-dist/org.ucabled.conf usr/share/dbus-1/system.d
-dist/org.ucabled.policy usr/share/polkit-1/actions

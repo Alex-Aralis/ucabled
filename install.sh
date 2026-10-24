@@ -210,9 +210,7 @@ install -m 0644 -o root -g root "$DIST/completions/ucable-agent-helper.fish" \
     "$PREFIX/share/fish/vendor_completions.d/ucable-agent-helper.fish"
 
 # Gettext catalogs ("ucable" domain).  The GTK4 helper looks them up
-# relative to its own location (<prefix>/share/locale); the GNOME Shell
-# extension gets its own copy under locale/ in the extension directory,
-# installed further below.
+# relative to its own location (<prefix>/share/locale).
 if command -v msgfmt >/dev/null; then
     for po in "$ROOT"/po/*.po; do
         [[ -e "$po" ]] || continue
@@ -242,28 +240,6 @@ install -m 0644 -o root -g root "$DIST/org.ucabled.conf" "$DBUS_DIR/org.ucabled.
 install -d -m 0755 "$POLKIT_ACTIONS_DIR"
 install -m 0644 -o root -g root "$DIST/org.ucabled.policy" \
     "$POLKIT_ACTIONS_DIR/org.ucabled.policy"
-
-# GNOME Shell agent extension. Present-but-disabled is inert; each user
-# opts in with `gnome-extensions enable ucable-gnome-agent@fuzy.me`.
-GNOME_EXT_SRC="$ROOT/contrib/ucable-gnome-agent"
-if [[ -d "$GNOME_EXT_SRC" ]]; then
-    GNOME_EXT_DIR="$PREFIX/share/gnome-shell/extensions/ucable-gnome-agent@fuzy.me"
-    install -d -m 0755 "$GNOME_EXT_DIR"
-    for f in metadata.json extension.js qrcode.mjs; do
-        install -m 0644 -o root -g root "$GNOME_EXT_SRC/$f" "$GNOME_EXT_DIR/$f"
-    done
-    # The extension binds the shared "ucable" domain to its own locale/
-    # directory (Extension.initTranslations()).
-    if command -v msgfmt >/dev/null; then
-        for po in "$ROOT"/po/*.po; do
-            [[ -e "$po" ]] || continue
-            lang="$(basename "$po" .po)"
-            install -d -m 0755 "$GNOME_EXT_DIR/locale/$lang/LC_MESSAGES"
-            msgfmt "$po" \
-                -o "$GNOME_EXT_DIR/locale/$lang/LC_MESSAGES/ucable.mo"
-        done
-    fi
-fi
 
 # The unit files bake in the default /usr/local/bin; rewrite them for the
 # chosen prefix.

@@ -1,5 +1,0 @@
-# The daemon runs as this dedicated system account.  The human user never
-# needs it: the virtual device's hidraw node is granted through systemd's
-# FIDO udev rules (uaccess), and /dev/uhid itself is opened only by the
-# daemon, through the ACL added by /usr/lib/udev/rules.d/90-ucabled.rules.
-u ucabled - "Phone Passkey Bridge"

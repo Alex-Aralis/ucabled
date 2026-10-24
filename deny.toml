@@ -1,5 +1,5 @@
 # cargo-deny policy.  Run locally with:
-#   nix develop --command cargo deny check
+#   cargo deny check
 # and in CI by .github/workflows/audit.yml.
 
 [advisories]
