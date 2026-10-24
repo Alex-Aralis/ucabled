@@ -18,6 +18,10 @@ WatchdogSec=30s
 StateDirectory=ucabled
 
 # The daemon only needs /dev/uhid plus the system bus and the network.
+# Device nodes: /dev/uhid only (DevicePolicy=closed still allows the
+# standard pseudo devices such as /dev/null and /dev/urandom).
+DevicePolicy=closed
+DeviceAllow=/dev/uhid rw
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
