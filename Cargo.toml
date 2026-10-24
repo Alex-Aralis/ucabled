@@ -84,7 +84,6 @@ libc = "0.2"
 gtk = { package = "gtk4", version = "0.11" }
 # GNOME-native window chrome; enabled through the `adwaita` feature.
 adw = { package = "libadwaita", version = "0.9", optional = true }
-gtk4-layer-shell = "0.8"
 # glibc and musl ship the gettext runtime, so link against it instead of
 # letting gettext-sys compile and statically link its bundled GNU gettext
 # (which also breaks under the LTO flags Debian's build tools add).

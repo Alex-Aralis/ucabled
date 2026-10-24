@@ -23,10 +23,6 @@ const EXIT_USE_PHONE: i32 = 0;
 /// Exit status meaning "decline" / "keep the security key".
 const EXIT_DECLINE: i32 = 1;
 
-/// Corner radius of the card. GTK's own client-side decorations use a radius of
-/// the same order, so both window kinds end up looking alike.
-const CARD_RADIUS: i32 = 12;
-
 /// CSS class toggled on the QR picture when the daemon reports `found`.
 const FOUND_CSS_CLASS: &str = "blurred";
 
@@ -124,7 +120,6 @@ struct Options {
     select: bool,
     timeout: Duration,
     rp: Option<String>,
-    layer_shell: bool,
     url: Option<String>,
     request_type: Option<RequestKind>,
 }
@@ -134,7 +129,6 @@ fn parse_args() -> Options {
         select: false,
         timeout: Duration::from_secs(300),
         rp: None,
-        layer_shell: env_truthy("UCABLED_HELPER_LAYER_SHELL"),
         url: None,
         request_type: None,
     };
@@ -143,7 +137,6 @@ fn parse_args() -> Options {
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--select" => opts.select = true,
-            "--layer-shell" => opts.layer_shell = true,
             "--timeout" => {
                 if let Some(secs) = args.next().and_then(|v| v.parse::<u64>().ok()) {
                     opts.timeout = Duration::from_secs(secs);
@@ -173,13 +166,6 @@ fn parse_args() -> Options {
     }
 
     opts
-}
-
-fn env_truthy(name: &str) -> bool {
-    match std::env::var(name) {
-        Ok(v) => !v.is_empty() && v != "0" && !v.eq_ignore_ascii_case("false"),
-        Err(_) => false,
-    }
 }
 
 // --------------------------------------------------------------------------
@@ -399,26 +385,6 @@ fn header_bar() -> gtk::Widget {
     gtk::HeaderBar::new().upcast()
 }
 
-/// Round the window background, for the case where GTK does not do it for us.
-///
-/// A layer surface has no client-side decorations, so the rounded background
-/// GTK draws on a normal window is missing there and the card would come out
-/// with square corners. Rounding the window's CSS background leaves the corner
-/// pixels unpainted, which the compositor blends with whatever is behind the
-/// surface.
-fn round_window(window: &gtk::ApplicationWindow) {
-    let provider = gtk::CssProvider::new();
-    provider.load_from_data(&format!(
-        "window.background {{ border-radius: {CARD_RADIUS}px; }}"
-    ));
-    gtk::style_context_add_provider_for_display(
-        // `display` is implemented by both RootExt and WidgetExt here.
-        &gtk::prelude::WidgetExt::display(window),
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
-}
-
 /// Install the blur rule for [`FOUND_CSS_CLASS`]; needed on every window kind.
 fn install_blur_css(window: &gtk::ApplicationWindow) {
     let provider = gtk::CssProvider::new();
@@ -430,51 +396,10 @@ fn install_blur_css(window: &gtk::ApplicationWindow) {
     );
 }
 
-/// Attach the page to the window, with or without window chrome.
-///
-/// A wlr-layer-shell surface gets no header bar: the compositor places it and
-/// draws nothing around it, so the bar would be pure clutter on a small overlay
-/// (Esc covers dismissal), and there is no decoration to round the card either.
-/// GTK would otherwise add a default titlebar of its own, so that case sets an
-/// empty one instead; `set_decorated(false)` is not the tool for it, that merely
-/// asks the compositor to draw its own frame.
-fn set_window_content(
-    window: &gtk::ApplicationWindow,
-    content: &impl IsA<gtk::Widget>,
-    layer_shell: bool,
-) {
-    if layer_shell {
-        let empty = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-        window.set_titlebar(Some(&empty));
-        round_window(window);
-    } else {
-        window.set_titlebar(Some(&header_bar()));
-    }
+/// Attach the page to the window, under a header bar with a close button.
+fn set_window_content(window: &gtk::ApplicationWindow, content: &impl IsA<gtk::Widget>) {
+    window.set_titlebar(Some(&header_bar()));
     window.set_child(Some(content));
-}
-
-/// Present the window as a wlr-layer-shell overlay when requested. It is a
-/// no-op unless asked for (via `--layer-shell` or `UCABLED_HELPER_LAYER_SHELL`)
-/// and the compositor speaks the protocol; elsewhere (e.g. GNOME/Mutter) the
-/// window stays a normal toplevel. Returns whether the surface is a layer
-/// surface, which decides whether the window carries a header bar.
-fn maybe_layer_shell(window: &gtk::ApplicationWindow, requested: bool) -> bool {
-    use gtk4_layer_shell::{KeyboardMode, Layer, LayerShell};
-
-    if !requested {
-        return false;
-    }
-    if !gtk4_layer_shell::is_supported() {
-        eprintln!("layer-shell requested but unsupported here; using a normal window");
-        return false;
-    }
-    window.init_layer_shell();
-    window.set_namespace(Some("ucabled"));
-    window.set_layer(Layer::Overlay);
-    window.set_keyboard_mode(KeyboardMode::OnDemand);
-    // No anchors: the compositor centres the fixed-size surface instead of
-    // stretching it to the output.
-    true
 }
 
 // --------------------------------------------------------------------------
@@ -499,7 +424,7 @@ fn status_page(title: &str, subtitle: &str) -> gtk::Box {
     page
 }
 
-fn build_qr_window(window: &gtk::ApplicationWindow, opts: &Options, layer_shell: bool) {
+fn build_qr_window(window: &gtk::ApplicationWindow, opts: &Options) {
     window.set_default_size(380, 560);
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 18);
@@ -507,14 +432,6 @@ fn build_qr_window(window: &gtk::ApplicationWindow, opts: &Options, layer_shell:
     content.set_margin_bottom(24);
     content.set_margin_start(24);
     content.set_margin_end(24);
-
-    // A normal window names the request in its title bar; only a layer surface,
-    // which draws no title bar at all, needs the card to say it.
-    if layer_shell {
-        let headline = gtk::Label::new(Some(&tr("Passkey request")));
-        headline.add_css_class("title-3");
-        content.append(&headline);
-    }
 
     if let Some(rp) = &opts.rp {
         let rp_label = gtk::Label::new(Some(rp));
@@ -552,7 +469,7 @@ fn build_qr_window(window: &gtk::ApplicationWindow, opts: &Options, layer_shell:
     stack.set_visible_child_name("qr");
 
     content.append(&stack);
-    set_window_content(window, &content, layer_shell);
+    set_window_content(window, &content);
 
     watch_stdin(picture, caption, stack.clone(), opts.url.clone());
 
@@ -626,7 +543,7 @@ fn watch_stdin(
     });
 }
 
-fn build_select_window(window: &gtk::ApplicationWindow, opts: &Options, layer_shell: bool) {
+fn build_select_window(window: &gtk::ApplicationWindow, opts: &Options) {
     window.set_default_size(400, 260);
     // Closing the window (Esc / the header-bar button) means "declined".
     window.connect_close_request(|_| {
@@ -666,7 +583,7 @@ fn build_select_window(window: &gtk::ApplicationWindow, opts: &Options, layer_sh
     buttons.append(&use_phone);
 
     content.append(&buttons);
-    set_window_content(window, &content, layer_shell);
+    set_window_content(window, &content);
 
     if !opts.timeout.is_zero() {
         glib::timeout_add_seconds_local_once(opts.timeout.as_secs() as u32, || {
@@ -695,8 +612,7 @@ fn bind_escape(window: &gtk::ApplicationWindow) {
 fn activate(app: &gtk::Application, opts: Options) {
     let window = new_app_window(app);
     // The title is what the compositor and taskbar show. In QR mode it should
-    // say what the window is asking for; a layer surface draws no title bar,
-    // which is why the card carries its own headline there.
+    // say what the window is asking for.
     let title = if opts.select {
         "ucabled".to_string()
     } else {
@@ -708,14 +624,10 @@ fn activate(app: &gtk::Application, opts: Options) {
     bind_escape(&window);
     install_blur_css(&window);
 
-    // Layer-shell must be decided before the window is realized/presented; it
-    // also decides whether the window carries a header bar.
-    let layer_shell = maybe_layer_shell(&window, opts.layer_shell);
-
     if opts.select {
-        build_select_window(&window, &opts, layer_shell);
+        build_select_window(&window, &opts);
     } else {
-        build_qr_window(&window, &opts, layer_shell);
+        build_qr_window(&window, &opts);
     }
 
     window.present();
@@ -728,16 +640,13 @@ fn main() {
                 println!(
                     "ucable-agent-helper {} — QR/selection window for ucable-agent\n\
                      \n\
-                     Usage: ucable-agent-helper [RP] [--select] [--layer-shell]\n\
-                     \x20                            [--timeout SECS] [--request-type mc|ga]\n\
+                     Usage: ucable-agent-helper [RP] [--select] [--timeout SECS]\n\
+                     \x20                           [--request-type mc|ga]\n\
                      \n\
                      The caBLE URL is read from the first stdin line; a later\n\
                      \"found\" line blurs the code and asks to confirm on the\n\
                      phone. In --select mode the exit status answers:\n\
                      \x20 0 = use the phone, 1 = decline.\n\
-                     \n\
-                     Environment:\n\
-                     \x20 UCABLED_HELPER_LAYER_SHELL  truthy = --layer-shell\n\
                      \n\
                      Options:\n\
                      \x20 -h, --help     print this help\n\

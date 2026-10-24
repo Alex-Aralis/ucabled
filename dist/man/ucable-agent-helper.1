@@ -5,7 +5,6 @@ ucable\-agent\-helper \- QR code and device\-selection window for ucabled
 .SH SYNOPSIS
 .B ucable\-agent\-helper
 .RB [ \-\-select ]
-.RB [ \-\-layer\-shell ]
 .RB [ \-\-timeout " SECS" ]
 .RB [ \-\-request\-type " mc|ga" ]
 .SH DESCRIPTION
@@ -28,9 +27,6 @@ security key.
 Show the device\-selection window instead of the QR window.
 Exit status 0 means "use the phone"; non\-zero means "decline".
 .TP
-.B \-\-layer\-shell
-Draw as a Wayland layer\-shell surface instead of a window.
-.TP
 .BI \-\-timeout " SECS"
 Close the window after
 .I SECS
@@ -48,11 +44,6 @@ Print help and exit.
 .TP
 .BR \-V ", " \-\-version
 Print the version and exit.
-.SH ENVIRONMENT
-.TP
-.B UCABLED_HELPER_LAYER_SHELL
-Truthy to imply
-.BR \-\-layer\-shell .
 .SH EXIT STATUS
 0 on success, or "use the phone" in select mode; non\-zero on cancel, close,
 timeout or signal.

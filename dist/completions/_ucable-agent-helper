@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 _arguments \
     '--select[device-selection window]' \
-    '--layer-shell[Wayland layer-shell surface]' \
     '--timeout[close after SECS seconds]:seconds:' \
     '--request-type[request type]:type:(mc ga)' \
     '(-h --help)'{-h,--help}'[print help]' \

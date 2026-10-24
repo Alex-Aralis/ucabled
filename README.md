@@ -279,17 +279,12 @@ and the browser finishes.  Close the window or click Cancel to abort.
 
 `ucable-agent` draws nothing itself: for each prompt it spawns a helper and
 talks to it over argv, stdin and the exit status.  The bundled
-`ucable-agent-helper` is a native GTK4 program: normally a window with a header
-bar and close button; with `--layer-shell` a wlr-layer-shell overlay on wlroots
-compositors such as Sway — a bare, rounded card with no chrome, dismissed by
-Esc or the agent.  Its strings are localized with gettext (the Nix package
-installs the catalogs).  Build with `--features adwaita` for GNOME-native window
-chrome.
+`ucable-agent-helper` is a native GTK4 program: a window with a header bar and
+close button, dismissed by Esc or the agent.  Its strings are localized with
+gettext.  Build with `--features adwaita` for GNOME-native window chrome.
 
 Any contract-v1 helper can replace it: set `UCABLED_HELPER` (an absolute path
-or a bare command name), or `services.ucabled.helper` on NixOS.  Extra helper
-flags go in `services.ucabled.helperExtraArgs` (for example
-`[ "--layer-shell" ]`).
+or a bare command name).
 
 On GNOME there is also `contrib/ucable-gnome-agent`, a Shell extension that
 registers as the session agent itself — no helper process — and draws the
@@ -417,8 +412,7 @@ GPG signature and uploads the assets to the release.  Keeping this step
 local means the signing key never leaves the maintainer's machine.
 
 The bundled GTK4 helper is in the default build, so a plain `cargo build` needs
-GTK4 headers (plus wlr-layer-shell bindings) and gettext; the Nix dev shell
-provides them.  Add `--features adwaita` for GNOME-native window chrome — the
+GTK4 headers and gettext.  Add `--features adwaita` for GNOME-native window chrome — the
 Nix package stays libadwaita-free to remain desktop-neutral.
 
 Helper tools in the repo (not shipped in the package):

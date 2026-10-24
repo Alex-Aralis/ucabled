@@ -4,7 +4,7 @@ _ucable_agent_helper() {
     local cur
     cur=${COMP_WORDS[COMP_CWORD]}
     COMPREPLY=($(compgen -W \
-        '--select --layer-shell --timeout --request-type -h --help -V --version' \
+        '--select --timeout --request-type -h --help -V --version' \
         -- "$cur"))
 }
 complete -F _ucable_agent_helper ucable-agent-helper
