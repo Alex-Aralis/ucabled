@@ -21,6 +21,11 @@ Changes on top of v0.2.0:
 - **No layer-shell mode**: the helper's `--layer-shell` overlay (for Sway and
   Hyprland) is gone. It removed the `gtk4-layer-shell` bindings, the least
   established crates in the tree, and 5 other crates they pulled in.
+- **QR code layout**: when only the WebSocket tunnel is offered, the QR code
+  leaves out key 6 and carries keys 0-5, exactly like Chrome's.
+- **Phone linking was tried and dropped** (2026-10-23): Android no longer sends
+  linking information for WebAuthn. Chrome turned the feature off in 2024. See
+  `docs/linking.md`.
 - **Device lockdown**: `dist/ucabled.service` sets `DevicePolicy=closed` and
   `DeviceAllow=/dev/uhid rw`.
 - **Upstream infrastructure removed**: the Nix flake and module (whose README

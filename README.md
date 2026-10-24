@@ -224,8 +224,10 @@ Logs contain only command bytes and lengths, never raw CBOR payloads.
 
 - Tested with iPhones (iCloud Keychain, Google Password Manager, Strongbox)
   and an Android phone (Google Password Manager).  State-assisted linking
-  ("remember this computer", scan-free reconnect) is unsupported on iOS and
-  shelved, so every transaction needs a fresh QR scan.
+  ("remember this computer", scan-free reconnect) is unsupported: iOS never
+  implemented it, Android no longer sends linking information, and Chrome
+  disabled it for WebAuthn in 2024 (see `docs/linking.md`).  Every transaction
+  needs a fresh QR scan.
 - Only the active local session gets a window; a pure TTY or SSH prompt is out
   of scope.
 - With Firefox, RPs always see `transports: ["usb"]`, a hardcode in Firefox's

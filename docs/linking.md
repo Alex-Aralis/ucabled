@@ -1,3 +1,17 @@
+> **Status (2026-10-23): not possible for WebAuthn; shelved for good.** An
+> Android phone (Pixel 7 Pro, Google Password Manager) was tested against a
+> working implementation of §1.1 (QR key 4 = true, keys 0-5 like Chrome,
+> linking accepted from the post-handshake message or from update messages up
+> to 3 minutes after the reply). Over three QR transactions it sent no linking
+> information and no update message at all. The reason is upstream: Chromium
+> disabled hybrid linking for WebAuthn behind a flag in October 2024
+> (crbug.com/372493822, commit 1e63cf3d14) and removed the linking UI in June
+> 2025 (f69542acd1). `ShouldOfferLinking()` now returns false for every
+> WebAuthn request ("Hybrid linking is not supported for WebAuthn"). Phones now
+> reach Chrome without a QR code only through Google account sync, which other
+> clients cannot use. The implementation is in this repository's history
+> (2ea0428, reverted in the following commit).
+
 # State-assisted Linking（FR-7）设计
 
 > **状态（2026-09-29）：搁置。** L0 真机验证结果：iOS（iPhone，iCloud

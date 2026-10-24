@@ -20,7 +20,7 @@ fn parse_point(bytes: &[u8]) -> Option<PublicKey> {
     PublicKey::from_sec1_bytes(bytes).ok()
 }
 
-pub(crate) fn ecdh(secret: &SecretKey, peer_bytes: &[u8]) -> Option<[u8; 32]> {
+fn ecdh(secret: &SecretKey, peer_bytes: &[u8]) -> Option<[u8; 32]> {
     let peer = parse_point(peer_bytes)?;
     let shared = diffie_hellman(secret.to_nonzero_scalar(), peer.as_affine());
     let x: &[u8] = shared.raw_secret_bytes();
