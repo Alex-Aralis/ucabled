@@ -31,6 +31,9 @@ const AGENT_PATH: &str = "/org/ucabled/Agent";
 const DBUS_INTERFACE: &str = "org.freedesktop.DBus";
 /// How long the device-selection window stays up before declining.
 const SELECT_TIMEOUT_SECS: u64 = 60;
+/// How many times (one second apart) to retry registering after the daemon
+/// reappears on the bus.
+const REREGISTER_ATTEMPTS: u32 = 10;
 
 /// A live helper window: its pid (to tell it apart when it exits), the
 /// transaction it belongs to, and a queue of stdin lines. The helper process
@@ -155,10 +158,30 @@ async fn main() -> Result<()> {
                 notify_selection(&conn, tid, use_phone).await;
             }
             Some(()) = daemon_rx.recv() => {
-                // A daemon restart clears its in-memory agent slot. Any
-                // failure (refused or transient) drops our windows, like
-                // before; the next appearance signal starts a new attempt.
-                if !matches!(register_once(&conn).await, Ok(true)) {
+                // A daemon restart clears its in-memory agent slot. The
+                // name appears on the bus a moment before the daemon serves
+                // RegisterAgent, so retry transient failures briefly. Any
+                // final failure drops our windows; the next appearance
+                // signal starts a new attempt.
+                let mut registered = false;
+                for attempt in 1..=REREGISTER_ATTEMPTS {
+                    match register_once(&conn).await {
+                        Ok(true) => {
+                            tracing::info!("agent re-registered at {AGENT_PATH}");
+                            registered = true;
+                            break;
+                        }
+                        Ok(false) => {
+                            tracing::info!("re-registration refused; this session is not the active one");
+                            break;
+                        }
+                        Err(e) => {
+                            tracing::info!(attempt, "daemon not ready ({e:#}), retrying");
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                }
+                if !registered {
                     close_window(&qr_window);
                     close_window(&select_window);
                 }
