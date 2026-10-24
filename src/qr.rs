@@ -93,8 +93,13 @@ pub fn encode_qr_contents(
     request_type: RequestType,
     channels: &[u64],
 ) -> Vec<u8> {
+    // Key 6 is only written when the client offers more than the WebSocket
+    // tunnel: its absence means exactly that (PXP §5.3.1).  Chrome's QR codes
+    // carry keys 0-5 only, and phones built against them, Android's linking
+    // among them, are only known to work with that shape.
+    let websocket_only = channels == [TRANSPORT_WEBSOCKET];
     let mut out = Vec::new();
-    cbor::map(&mut out, 7);
+    cbor::map(&mut out, if websocket_only { 6 } else { 7 });
 
     cbor::uint(&mut out, QR_KEY_PUBLIC_KEY as u64);
     cbor::bytes(&mut out, compressed_public_key);
@@ -122,10 +127,12 @@ pub fn encode_qr_contents(
     cbor::uint(&mut out, QR_KEY_REQUEST_TYPE as u64);
     cbor::text(&mut out, request_type.as_str());
 
-    cbor::uint(&mut out, QR_KEY_TRANSPORTS as u64);
-    cbor::array(&mut out, channels.len() as u64);
-    for &channel in channels {
-        cbor::uint(&mut out, channel);
+    if !websocket_only {
+        cbor::uint(&mut out, QR_KEY_TRANSPORTS as u64);
+        cbor::array(&mut out, channels.len() as u64);
+        for &channel in channels {
+            cbor::uint(&mut out, channel);
+        }
     }
 
     out
@@ -246,5 +253,39 @@ mod tests {
         let parsed = parse_qr_url(&url).unwrap();
         assert_eq!(parsed.compressed_public_key, public_key);
         assert_eq!(parsed.secret, secret);
+    }
+
+    #[test]
+    fn websocket_only_qr_has_chromes_keys_0_to_5() {
+        let public_key = [0x11u8; COMPRESSED_PUBLIC_KEY_SIZE];
+        let secret = [0x22u8; QR_SECRET_SIZE];
+        let contents = encode_qr_contents(
+            &public_key,
+            &secret,
+            2,
+            true,
+            RequestType::GetAssertion,
+            &[TRANSPORT_WEBSOCKET],
+        );
+        let mut c = cbor::Decoder::new(&contents);
+        assert_eq!(c.map_header(), Some(6));
+        let mut keys = Vec::new();
+        for _ in 0..6 {
+            keys.push(c.uint().unwrap());
+            c.skip_value().unwrap();
+        }
+        assert_eq!(keys, [0, 1, 2, 3, 4, 5]);
+        // Key 4 (supports linking) is true.
+        assert!(contents.windows(2).any(|w| w == [0x04, cbor::TRUE]));
+
+        let with_ble = encode_qr_contents(
+            &public_key,
+            &secret,
+            2,
+            true,
+            RequestType::GetAssertion,
+            &[TRANSPORT_WEBSOCKET, TRANSPORT_BLE],
+        );
+        assert_eq!(cbor::Decoder::new(&with_ble).map_header(), Some(7));
     }
 }
