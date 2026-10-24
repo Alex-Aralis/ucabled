@@ -393,6 +393,9 @@ async fn daemon_loop(
                                 // Firefox tags USB credentials with a
                                 // transports hint that some phones reject.
                                 let payload = ucabled::ctap::strip_transport_hints(&payload);
+                                // Firefox sends getAssertion options out of
+                                // canonical order, which Android rejects.
+                                let payload = ucabled::ctap::normalize_assertion_options(&payload);
                                 // The patchers borrow the original payload
                                 // when nothing changed; the relay task is
                                 // spawned and needs an owned buffer.

@@ -677,9 +677,140 @@ fn strip_transports_from_array(data: &[u8]) -> Option<(Vec<u8>, bool)> {
     Some((out, removed))
 }
 
+/// Canonical CBOR order for text map keys: shorter first, then bytewise.
+fn canonical_key_order(a: &str, b: &str) -> std::cmp::Ordering {
+    (a.len(), a.as_bytes()).cmp(&(b.len(), b.as_bytes()))
+}
+
+/// Rewrite a getAssertion's `options` map (key 5) the way Chromium sends it:
+/// drop `up: true` (the CTAP default) and emit the remaining keys in
+/// canonical CBOR order.
+///
+/// Firefox encodes `{"uv": true, "up": true}`, out of canonical order. iOS
+/// accepts that, but Android's hybrid authenticator parses strictly and
+/// fails the whole request, showing "Something went wrong" on the phone.
+/// `up: false` is kept, and every other parameter is preserved byte-for-byte.
+/// Returns a borrow of the input if nothing needed changing or the payload
+/// doesn't parse.
+pub fn normalize_assertion_options(command: &[u8]) -> Cow<'_, [u8]> {
+    let Some((&CMD_GET_ASSERTION, params)) = command.split_first() else {
+        return Cow::Borrowed(command);
+    };
+
+    let result = (|| -> Option<Vec<u8>> {
+        let mut c = cbor::Decoder::new(params);
+        let pairs = c.map_header()?;
+        let mut entries: Vec<(u64, std::ops::Range<usize>)> = Vec::new();
+        for _ in 0..pairs {
+            let key = c.uint()?;
+            let start = c.pos();
+            c.skip_value()?;
+            entries.push((key, start..c.pos()));
+        }
+        if c.pos() != params.len() {
+            return None;
+        }
+
+        let (_, span) = entries.iter().find(|(k, _)| *k == GA_KEY_OPTIONS)?;
+        let opts = &params[span.clone()];
+        let mut oc = cbor::Decoder::new(opts);
+        let n = oc.map_header()?;
+        let mut kept: Vec<(&str, std::ops::Range<usize>)> = Vec::new();
+        let mut dropped_up = false;
+        for _ in 0..n {
+            let k = oc.text_str()?;
+            let start = oc.pos();
+            oc.skip_value()?;
+            if k == "up" && opts[start..oc.pos()] == [cbor::TRUE] {
+                dropped_up = true;
+                continue;
+            }
+            kept.push((k, start..oc.pos()));
+        }
+        let in_order = kept
+            .windows(2)
+            .all(|w| canonical_key_order(w[0].0, w[1].0).is_lt());
+        if !dropped_up && in_order {
+            return None;
+        }
+        kept.sort_by(|a, b| canonical_key_order(a.0, b.0));
+
+        let mut out = vec![CMD_GET_ASSERTION];
+        cbor::map(&mut out, if kept.is_empty() { pairs - 1 } else { pairs });
+        for (key, span) in &entries {
+            if *key != GA_KEY_OPTIONS {
+                cbor::uint(&mut out, *key);
+                out.extend_from_slice(&params[span.clone()]);
+            } else if !kept.is_empty() {
+                cbor::uint(&mut out, *key);
+                cbor::map(&mut out, kept.len() as u64);
+                for (k, v) in &kept {
+                    cbor::text(&mut out, k);
+                    out.extend_from_slice(&opts[v.clone()]);
+                }
+            }
+        }
+        Some(out)
+    })();
+
+    match result {
+        Some(out) => {
+            tracing::info!("normalized getAssertion options for strict phone parsers");
+            Cow::Owned(out)
+        }
+        None => Cow::Borrowed(command),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Firefox 158's interactive getAssertion, as captured from webauthn.io:
+    /// {1: "webauthn.io", 2: h'..'x32, 3: [{"id": h'..'x16, "type": "public-key"}],
+    ///  5: {"uv": true, "up": true}}
+    const FIREFOX_GET_ASSERTION: &str = "02a4016b776562617574686e2e696f025820bebe124d3cfc465e744f4b2e936599c6f2493cb6c69e920b825abb3582d00c2f0381a262696450f7e8ace3d949a33b57e185494310fe7364747970656a7075626c69632d6b657905a2627576f5627570f5";
+
+    #[test]
+    fn normalize_assertion_options_firefox_request() {
+        let cmd = hex::decode(FIREFOX_GET_ASSERTION).unwrap();
+        let out = normalize_assertion_options(&cmd);
+        // Same request, options reduced to {"uv": true} like Chromium sends.
+        let mut want = cmd[..cmd.len() - "05a2627576f5627570f5".len() / 2].to_vec();
+        want.extend_from_slice(&hex::decode("05a1627576f5").unwrap());
+        assert_eq!(hex::encode(&out), hex::encode(&want));
+        // idempotent
+        assert!(matches!(normalize_assertion_options(&out), Cow::Borrowed(_)));
+    }
+
+    #[test]
+    fn normalize_assertion_options_drops_lone_up_true() {
+        // {1: "a", 2: h'00', 5: {"up": true}} -> {1: "a", 2: h'00'}
+        let cmd = hex::decode("02a301616102410005a1627570f5").unwrap();
+        let out = normalize_assertion_options(&cmd);
+        assert_eq!(hex::encode(&out), "02a2016161024100");
+    }
+
+    #[test]
+    fn normalize_assertion_options_keeps_up_false_and_sorts() {
+        // {5: {"uv": true, "up": false}} -> {5: {"up": false, "uv": true}}
+        let cmd = hex::decode("02a105a2627576f5627570f4").unwrap();
+        let out = normalize_assertion_options(&cmd);
+        assert_eq!(hex::encode(&out), "02a105a2627570f4627576f5");
+    }
+
+    #[test]
+    fn normalize_assertion_options_noop() {
+        // Already canonical, no up: true.
+        let cmd = hex::decode("02a105a1627576f5").unwrap();
+        assert!(matches!(normalize_assertion_options(&cmd), Cow::Borrowed(_)));
+        // No options at all.
+        let cmd = hex::decode("02a2016161024100").unwrap();
+        assert!(matches!(normalize_assertion_options(&cmd), Cow::Borrowed(_)));
+        // makeCredential is left alone.
+        let cmd = hex::decode("01a105a2627576f5627570f5").unwrap();
+        assert!(matches!(normalize_assertion_options(&cmd), Cow::Borrowed(_)));
+    }
 
     #[test]
     fn getinfo_shape() {
